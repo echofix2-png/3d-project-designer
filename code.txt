@@ -1,0 +1,413 @@
+https://github.com/echofix2-png/3d-project-designer
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Project Designer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+    }
+    .wrapper {
+      width: 100%;
+      max-width: 1100px;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+    }
+    p.subtitle {
+      font-size: 0.95rem;
+      color: #4b5563;
+      margin-bottom: 1.25rem;
+    }
+    #deck-upsell-controls {
+      margin: 0 0 1rem 0;
+      font-size: 0.95rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      padding: 0.75rem 1rem;
+      background: #ffffff;
+      border-radius: 0.75rem;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    }
+    #deck-upsell-controls label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      color: #111827;
+    }
+    #deck-upsell-controls input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    #deck-3d-container {
+      width: 100%;
+      height: 540px;
+      background: radial-gradient(circle at top, #e5e7eb, #d1d5db);
+      border-radius: 1rem;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.25);
+    }
+    #deck-3d-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .footer-note {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <h1>3D Project Designer</h1>
+    <p class="subtitle">
+      Explore your outdoor project in 3D. Toggle features like pergolas, privacy
+      screens, lighting, stairs, and railings.
+    </p>
+
+    <div id="deck-upsell-controls">
+      <label><input type="checkbox" data-upsell="pergola" checked /> Pergola</label>
+      <label><input type="checkbox" data-upsell="privacy" checked /> Privacy Screens</label>
+      <label><input type="checkbox" data-upsell="lighting" checked /> Lighting</label>
+      <label><input type="checkbox" data-upsell="stairs" checked /> Stairs</label>
+      <label><input type="checkbox" data-upsell="railing" checked /> Railing</label>
+    </div>
+
+    <div id="deck-3d-container">
+      <canvas id="deck-3d-canvas"></canvas>
+    </div>
+
+    <div class="footer-note">
+      Click and drag to orbit • Scroll to zoom • Right-click to pan
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    (function () {
+      const container = document.getElementById("deck-3d-container");
+      const canvas = document.getElementById("deck-3d-canvas");
+      if (!container || !canvas || !window.THREE) return;
+
+      const THREE = window.THREE;
+
+      // ---------- MATERIALS ----------
+      const textureLoader = new THREE.TextureLoader();
+      const woodTexture = textureLoader.load(
+        "https://threejs.org/examples/textures/hardwood2_diffuse.jpg"
+      );
+      woodTexture.wrapS = woodTexture.wrapT = THREE.RepeatWrapping;
+      woodTexture.repeat.set(3, 2);
+
+      const woodMaterial = new THREE.MeshStandardMaterial({
+        map: woodTexture,
+        roughness: 0.55,
+        metalness: 0.05,
+      });
+
+      const darkMetal = new THREE.MeshStandardMaterial({
+        color: 0x2b2b2b,
+        roughness: 0.35,
+        metalness: 0.8,
+      });
+
+      const glassMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.1,
+        transmission: 0.7,
+        thickness: 0.2,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.7,
+      });
+
+      // ---------- TERRAIN ----------
+      function createTerrain() {
+        const geometry = new THREE.PlaneGeometry(200, 200);
+        geometry.rotateX(-Math.PI / 2);
+        const material = new THREE.MeshStandardMaterial({
+          color: 0x9ca3af,
+          roughness: 1,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.receiveShadow = true;
+        return mesh;
+      }
+
+      // ---------- LIGHTING ----------
+      function setupLighting(scene) {
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x4b5563, 0.7);
+        hemi.position.set(0, 80, 0);
+        scene.add(hemi);
+
+        const sun = new THREE.DirectionalLight(0xffffff, 1.3);
+        sun.position.set(60, 100, 40);
+        sun.castShadow = true;
+        sun.shadow.mapSize.set(2048, 2048);
+        sun.shadow.camera.left = -80;
+        sun.shadow.camera.right = 80;
+        sun.shadow.camera.top = 80;
+        sun.shadow.camera.bottom = -80;
+        scene.add(sun);
+
+        const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+        fill.position.set(-40, 40, -60);
+        scene.add(fill);
+      }
+
+      // ---------- UPSALE FEATURES ----------
+      function addPergola(group, deckWidth, deckDepth) {
+        const pergola = new THREE.Group();
+
+        const postGeom = new THREE.BoxGeometry(0.4, 7, 0.4);
+        const beamGeom = new THREE.BoxGeometry(deckWidth - 2, 0.4, 0.4);
+        const slatGeom = new THREE.BoxGeometry(0.4, 0.3, deckDepth - 2);
+
+        const halfW = deckWidth / 2;
+        const halfD = deckDepth / 2;
+
+        const posts = [
+          [-halfW + 1, 3.5, -halfD + 1],
+          [halfW - 1, 3.5, -halfD + 1],
+          [-halfW + 1, 3.5, halfD - 1],
+          [halfW - 1, 3.5, halfD - 1],
+        ];
+
+        posts.forEach(([x, y, z]) => {
+          const post = new THREE.Mesh(postGeom, woodMaterial);
+          post.position.set(x, y, z);
+          post.castShadow = true;
+          pergola.add(post);
+        });
+
+        const beamFront = new THREE.Mesh(beamGeom, woodMaterial);
+        beamFront.position.set(0, 7, -halfD + 1);
+        pergola.add(beamFront);
+
+        const beamBack = new THREE.Mesh(beamGeom, woodMaterial);
+        beamBack.position.set(0, 7, halfD - 1);
+        pergola.add(beamBack);
+
+        const slatCount = Math.floor((deckWidth - 2) / 1.2);
+        for (let i = 0; i < slatCount; i++) {
+          const x = -halfW + 1 + (i * (deckWidth - 2)) / (slatCount - 1 || 1);
+          const slat = new THREE.Mesh(slatGeom, woodMaterial);
+          slat.position.set(x, 7.4, 0);
+          slat.castShadow = true;
+          pergola.add(slat);
+        }
+
+        pergola.position.y = 2.25;
+        group.add(pergola);
+      }
+
+      function addPrivacyScreens(group, deckWidth, deckDepth) {
+        const screenGeom = new THREE.BoxGeometry(0.4, 5, deckDepth - 2);
+        const halfW = deckWidth / 2;
+
+        const screen = new THREE.Mesh(screenGeom, darkMetal);
+        screen.position.set(-halfW - 0.2, 4.5, 0);
+        screen.castShadow = true;
+        group.add(screen);
+      }
+
+      function addLighting(group, deckWidth, deckDepth) {
+        const bulbGeom = new THREE.SphereGeometry(0.25, 16, 16);
+        const bulbMat = new THREE.MeshStandardMaterial({
+          color: 0xfff4d6,
+          emissive: 0xffd27f,
+          emissiveIntensity: 1.6,
+        });
+
+        const halfW = deckWidth / 2;
+        const halfD = deckDepth / 2;
+
+        const positions = [
+          [-halfW + 1, 2.8, -halfD + 1],
+          [halfW - 1, 2.8, -halfD + 1],
+          [-halfW + 1, 2.8, halfD - 1],
+          [halfW - 1, 2.8, halfD - 1],
+        ];
+
+        positions.forEach(([x, y, z]) => {
+          const bulb = new THREE.Mesh(bulbGeom, bulbMat);
+          bulb.position.set(x, y, z);
+          bulb.castShadow = false;
+          group.add(bulb);
+        });
+      }
+
+      function addStairs(group, deckWidth, deckDepth) {
+        const stepDepth = 1.1;
+        const stepHeight = 0.55;
+        const stepCount = 4;
+
+        const stepGeom = new THREE.BoxGeometry(deckWidth - 4, stepHeight, stepDepth);
+        const halfD = deckDepth / 2;
+
+        for (let i = 0; i < stepCount; i++) {
+          const step = new THREE.Mesh(stepGeom, woodMaterial);
+          step.position.set(
+            0,
+            1 + i * stepHeight,
+            halfD + stepDepth / 2 + i * stepDepth
+          );
+          step.castShadow = true;
+          group.add(step);
+        }
+      }
+
+      function addRailing(group, deckWidth, deckDepth) {
+        const railHeight = 3;
+        const postGeom = new THREE.BoxGeometry(0.2, railHeight, 0.2);
+        const railGeom = new THREE.BoxGeometry(deckWidth - 2, 0.2, 0.2);
+
+        const halfW = deckWidth / 2;
+        const halfD = deckDepth / 2;
+
+        const posts = [
+          [-halfW + 1, railHeight / 2 + 2.25, -halfD + 1],
+          [halfW - 1, railHeight / 2 + 2.25, -halfD + 1],
+          [-halfW + 1, railHeight / 2 + 2.25, halfD - 1],
+          [halfW - 1, railHeight / 2 + 2.25, halfD - 1],
+        ];
+
+        posts.forEach(([x, y, z]) => {
+          const post = new THREE.Mesh(postGeom, darkMetal);
+          post.position.set(x, y, z);
+          post.castShadow = true;
+          group.add(post);
+        });
+
+        const frontRail = new THREE.Mesh(railGeom, darkMetal);
+        frontRail.position.set(0, railHeight + 2.25, -halfD + 1);
+        group.add(frontRail);
+
+        const backRail = new THREE.Mesh(railGeom, darkMetal);
+        backRail.position.set(0, railHeight + 2.25, halfD - 1);
+        group.add(backRail);
+      }
+
+      // ---------- DECK GEOMETRY ----------
+      function updateDeckGeometry(group, layout, upsells) {
+        group.clear();
+
+        layout.levels.forEach((lvl) => {
+          const geom = new THREE.BoxGeometry(lvl.width, 0.6, lvl.depth);
+          const deck = new THREE.Mesh(geom, woodMaterial);
+          deck.position.set(lvl.x, lvl.height, lvl.z);
+          deck.castShadow = true;
+          deck.receiveShadow = true;
+          group.add(deck);
+
+          if (upsells.pergola) addPergola(group, lvl.width, lvl.depth);
+          if (upsells.privacy) addPrivacyScreens(group, lvl.width, lvl.depth);
+          if (upsells.lighting) addLighting(group, lvl.width, lvl.depth);
+          if (upsells.stairs) addStairs(group, lvl.width, lvl.depth);
+          if (upsells.railing) addRailing(group, lvl.width, lvl.depth);
+        });
+      }
+
+      // ---------- SCENE SETUP ----------
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf3f4f6);
+
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        container.clientWidth / container.clientHeight,
+        0.1,
+        2000
+      );
+      camera.position.set(26, 18, 26);
+
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0, 2, 0);
+
+      setupLighting(scene);
+      scene.add(createTerrain());
+
+      const deckGroup = new THREE.Group();
+      scene.add(deckGroup);
+
+      // 18 (width) x 12 (depth), centered at origin
+      const layout = {
+        levels: [
+          {
+            width: 18,
+            depth: 12,
+            height: 2,
+            x: 0,
+            z: 0,
+          },
+        ],
+      };
+
+      window.deckUpsells = {
+        pergola: true,
+        privacy: true,
+        lighting: true,
+        stairs: true,
+        railing: true,
+      };
+
+      function refreshDeck() {
+        updateDeckGeometry(deckGroup, layout, window.deckUpsells);
+      }
+
+      refreshDeck();
+
+      // ---------- RENDER LOOP ----------
+      function animate() {
+        const rect = container.getBoundingClientRect();
+        renderer.setSize(rect.width, rect.height, false);
+        camera.aspect = rect.width / rect.height;
+        camera.updateProjectionMatrix();
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+      animate();
+
+      // ---------- UPSALE TOGGLES ----------
+      const controlsDiv = document.getElementById("deck-upsell-controls");
+      controlsDiv.addEventListener("change", (e) => {
+        const key = e.target.getAttribute("data-upsell");
+        if (!key) return;
+        window.deckUpsells[key] = e.target.checked;
+        refreshDeck();
+      });
+    })();
+  </script>
+</body>
+</html>
